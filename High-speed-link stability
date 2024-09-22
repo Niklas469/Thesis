@@ -1,0 +1,190 @@
+#!/usr/bin/python
+
+import uhal
+
+import argparse
+import math
+import time
+from datetime import datetime
+import subprocess
+
+
+def write_to_file(filename, dhp_list, crashes, iteration, error_list, error_rate, current_time, formatted_elapsed_time, drop_rate, data_counter, frame_counter, trigger_counter, trigger_rate):
+
+    for index, item in enumerate(dhp_list):
+        if item == 0:
+            with open(filename, "a") as file:
+                file.write("\n")
+            with open(filename, "a") as file:
+                file.write("Iteration {}:\n".format(iteration)+"\n")
+            with open(filename, "a") as file:
+                for index, item in enumerate(dhp_list, start=1):
+                    file.write("Status DHP_{}: {}\n".format(index, item))
+            with open(filename, "a") as file:
+                file.write("\n")
+            with open(filename, "a") as file:
+                for index, item in enumerate(crashes, start=1):
+                    file.write("Crashes DHP_{}: {}\n".format(index, item))
+            with open(filename, "a") as file:
+                file.write("\n")
+            with open(filename, "a") as file:
+                for index, item in enumerate(error_list, start=1):
+                    file.write("Error_DHP_{}: {}\n".format(index, item))
+            with open(filename, "a") as file:
+                file.write("\n")
+            with open(filename, "a") as file:
+                for index, item in enumerate(error_rate, start=1):
+                    file.write("Error_Rate_DHP_{}: {}\n".format(index, item))
+            with open(filename, "a") as file:
+                file.write("\n")
+            with open(filename, "a") as file:
+                for index, item in enumerate(drop_rate, start=1):
+                    file.write("Drop_probability DHP{}: {}\n".format(index,item))
+            with open(filename, "a") as file:
+                file.write("\n")
+            with open(filename, "a") as file:
+                file.write("Data_counter: {} , frame_counter: {} , trigger_counter: {} , trigger_rate: {}\n".format(data_counter, frame_counter, trigger_counter, trigger_rate))
+            with open(filename, "a") as file:
+                file.write("\n")
+            with open(filename, "a") as file:
+                file.write("{} Time since Script started: {} seconds\n".format(current_time, formatted_elapsed_time))
+                file.write("---------------------------------------")
+
+
+def check_zeros_in_list(dhp_list, crashes):
+    for index, item in enumerate(dhp_list):
+        if item ==0:
+            crashes[index] += 1
+    return crashes
+
+def drop_rate_probability(crashes,elapsed_time_since_start):
+    drop_rate = [num/elapsed_time_since_start for num in crashes]
+    return drop_rate
+
+def error_rate_probability(soft_errors, elapsed_time_since_start):
+    error_rate = [num/elapsed_time_since_start for num in soft_errors]
+    return error_rate
+
+def error_counter(hw_dhe):
+    T = hw_dhe.getNode("DHP_AURORA_SOFT_ERR_LOW.LINK1").read()
+    I = hw_dhe.getNode("DHP_AURORA_SOFT_ERR_LOW.LINK2").read()
+    N = hw_dhe.getNode("DHP_AURORA_SOFT_ERR_HIGH.LINK3").read()
+    A = hw_dhe.getNode("DHP_AURORA_SOFT_ERR_HIGH.LINK4").read()
+           
+    error_list = [T, I, N, A]
+           
+    hw_dhe.dispatch()
+
+    return error_list
+
+def trigger_count(hw_dhe):
+    data_counter = hw_dhe.getNode("DHP_DATA_CNT").read()
+    frame_counter = hw_dhe.getNode("DHP_FRAME_CNT").read()
+    trigger_counter = hw_dhe.getNode("TRIGGER_CNT").read()
+    trigger_rate = hw_dhe.getNode("TRIGGER_RATE").read()
+    hw_dhe.dispatch()
+    return data_counter, frame_counter, trigger_counter, trigger_rate
+
+
+def elapsed_time(script_start_time):
+    elapsed_time_since_start = time.time() - script_start_time
+   
+    formatted_elapsed_time = "{:.2f}".format(elapsed_time_since_start)
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+           
+    return elapsed_time_since_start, current_time, formatted_elapsed_time
+           
+
+
+
+def dhp_link_status(hw_dhe):
+    dhp1     = hw_dhe.getNode("DHE_STATUS_REG.DHP_CHANNEL0_UP").read()
+    dhp2     = hw_dhe.getNode("DHE_STATUS_REG.DHP_CHANNEL1_UP").read()
+    dhp3     = hw_dhe.getNode("DHE_STATUS_REG.DHP_CHANNEL2_UP").read()
+    dhp4     = hw_dhe.getNode("DHE_STATUS_REG.DHP_CHANNEL3_UP").read()
+
+
+    dhp_list= [dhp1, dhp2, dhp3, dhp4]
+
+
+    hw_dhe.dispatch()
+
+
+    print("STATUS DHP 1 : " + str(dhp1))
+    print("STATUS DHP 2 : " + str(dhp2))
+    print("STATUS DHP 3 : " + str(dhp3))
+    print("STATUS DHP 4 : " + str(dhp4))
+
+    return dhp_list
+
+def reset(hw_dhc, dhp_list):
+    hw_dhc.getNode("RST_REG.RST").write(1)
+    hw_dhc.getNode("RST_REG.RST").write(0)
+
+    hw_dhc.getNode("RST_REG.RST_SHORT").write(1)
+    hw_dhc.getNode("RST_REG.RST_SHORT").write(0)
+
+    hw_dhc.getNode("RST_REG.RST_LONG").write(1)
+    hw_dhc.getNode("RST_REG.RST_LONG").write(0)
+
+    hw_dhc.getNode("RST_REG.IN_RUN_RST").write(1)
+    hw_dhc.getNode("RST_REG.IN_RUN_RST").write(0)
+
+    hw_dhc.dispatch()
+
+def main(hw_dhe, hw_dhc):
+    formatted_start_time = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+
+    name = raw_input("Please enter filename:")
+    filename = "{}_{}.txt".format(name, formatted_start_time)
+    with open(filename, "w") as file:
+        pass
+    subprocess.Popen(["xdg-open", filename])
+
+    script_start_time = time.time()
+    formatted_start_time = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    crashes = [0, 0, 0, 0]
+    soft_errors = [0, 0, 0, 0]
+
+    with open(filename, "a") as file:
+        file.write("Script start: {}\n".format(formatted_start_time))
+
+   
+    with open(filename, "a") as file:
+        iteration = 0
+        try:
+            while True:
+                dhp_list = dhp_link_status(hw_dhe)
+                elapsed_time_since_start, current_time, formatted_elapsed_time = elapsed_time(script_start_time)
+
+                if any(item == 0 for item in dhp_list):
+                    crashes = check_zeros_in_list(dhp_list,crashes)
+                    drop_rate = drop_rate_probability(crashes, elapsed_time_since_start)
+                    error_list = error_counter(hw_dhe)
+                    soft_errors = [x + y for x, y in zip(soft_errors, error_list)]
+                    error_rate = error_rate_probability(soft_errors, elapsed_time_since_start)
+                    data_counter, frame_counter, trigger_counter, trigger_rate = trigger_count(hw_dhe)
+                    write_to_file(filename, dhp_list, crashes, iteration, error_list, error_rate, current_time, formatted_elapsed_time, drop_rate, data_counter, frame_counter, trigger_counter, trigger_rate)
+                    reset(hw_dhc, dhp_list)
+                    dhp_list = dhp_link_status(hw_dhe)
+
+                iteration += 1
+                time.sleep(2)
+        except KeyboardInterrupt:
+            pass
+   
+        with open(filename, "a") as file:
+            file.close()
+                   
+                   
+
+
+uhal.disableLogging()
+
+cm = uhal.ConnectionManager("file://connection.xml")
+hw_dhc = cm.getDevice("dhh.kek20_p3")
+hw_dhe = cm.getDevice("dhh.kek21")
+hw_dhi = cm.getDevice("dhi.kek28_1")
+
+
+main(hw_dhe,hw_dhc)
